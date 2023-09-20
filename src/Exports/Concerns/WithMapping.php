@@ -3,8 +3,10 @@
 namespace pxlrbt\FilamentExcel\Exports\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use UnitEnum;
+use pxlrbt\FilamentExcel\Columns\Column;
+use pxlrbt\FilamentExcel\Exports\Formatters\Formatter;
 
 trait WithMapping
 {
@@ -36,7 +38,7 @@ trait WithMapping
     }
 
     /**
-     * @param  Model|mixed  $row
+     * @param  Model|mixed  $record
      */
     public function map($record): array
     {
@@ -48,18 +50,53 @@ trait WithMapping
         }
 
         foreach ($columns as $column) {
-            $key = $column->getName();
+            $state = $this->getState($column, $record);
+            $state = $this->applyFormatStateUsing($column, $record, $state);
+
+            $result[$column->getName()] = app(Formatter::class)->format($state);
+        }
+
+        return $result;
+    }
+
+    private function getState(Column $column, $record)
+    {
+        $key = $column->getName();
+
+        if ($this->columnsSource === 'table' && $column->tableColumn !== null) {
+            $column->tableColumn->record($record);
+            $state = $column->tableColumn->getStateFromRecord();
+        } else {
             $state = data_get($record, $key);
+        }
 
-            $state = $column->getStateUsing === null
-                ? $state
-                : $this->evaluate($column->getStateUsing->getClosure(), [
-                    'column' => $column->tableColumn,
-                    'livewire' => $this->getLivewire(),
-                    'record' => $record,
-                    'state' => $state,
-                ]);
+        $arrayState = $column->getStateUsing === null
+            ? $state
+            : $this->evaluate($column->getStateUsing->getClosure(), [
+                'column' => $column->tableColumn,
+                'livewire' => $this->getLivewire(),
+                'record' => $record,
+            ]);
 
+        if ($this->columnsSource === 'table' && $column->tableColumn !== null && is_string($arrayState) && ($separator = $column->tableColumn->getSeparator())) {
+            $arrayState = explode($separator, $arrayState);
+            $arrayState = (count($arrayState) === 1 && blank($arrayState[0])) ?
+                [] :
+                $arrayState;
+        }
+
+        return $arrayState;
+    }
+
+    private function applyFormatStateUsing(Column $column, $record, $state)
+    {
+        $formattedState = [];
+
+        if ($this->shouldIgnoreFormattingForColumn($column)) {
+            return $state;
+        }
+
+        foreach (Arr::wrap($state) as $state) {
             $state = $column->formatStateUsing === null
                 ? $state
                 : $this->evaluate($column->formatStateUsing->getClosure(), [
@@ -69,17 +106,9 @@ trait WithMapping
                     'state' => $state,
                 ]);
 
-            if (is_object($state)) {
-                $state = match (true) {
-                    method_exists($state, 'toString') => $state->toString(),
-                    method_exists($state, '__toString') => $state->__toString(),
-                    function_exists('enum_exists') && $state instanceof UnitEnum => $state->value,
-                };
-            }
-
-            $result[$key] = $state;
+            $formattedState[] = $state;
         }
 
-        return $result;
+        return $formattedState;
     }
 }

@@ -1,31 +1,46 @@
+<div class="filament-hidden">
+
 ![header](./.github/resources/header.png)
+
+</div>
 
 # Filament Excel
 
+<div class="filament-hidden">
+
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/pxlrbt/filament-excel.svg?include_prereleases)](https://packagist.org/packages/pxlrbt/filament-excel)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE.md)
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/pxlrbt/filament-excel/Code%20Style?label=code%20style)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/pxlrbt/filament-excel/code-style.yml?branch=main&label=Code%20style&style=flat-square)
 [![Total Downloads](https://img.shields.io/packagist/dt/pxlrbt/filament-excel.svg)](https://packagist.org/packages/pxlrbt/filament-excel)
+
+</div>
 
 Easily configure your Excel exports in Filament via a bulk or page action.
 
+<div class="filament-hidden">
 
 https://user-images.githubusercontent.com/22632550/174591523-831df501-76d5-456a-b12e-f6d8316fb673.mp4
+
+</div>
 
 
 ## Installation
 
 Install via Composer. This will download the package and [Laravel Excel](https://laravel-excel.com/).
 
-**Requires PHP 8.0 and Filament 2.0**
+| Plugin Version | Filament Version | PHP Version |
+|----------------|-----------------|-------------|
+| 1.x            | 2.x   | \> 8.0      |
+| 2.x            | 3.x             | \> 8.1      |
+
 
 ```bash
 composer require pxlrbt/filament-excel
 ```
 
-### Laravel 9
+### Laravel > 9
 
-If composer require fails on Laravel 9 because of the simple-cache dependency, you will have to specify the psr/simple-cache version as ^2.0 in your composer.json to satisfy the PhpSpreadsheet dependency. You can install both at the same time as:
+If composer require fails on Laravel 9 or greater because of the simple-cache dependency, you will have to specify the psr/simple-cache version as ^2.0 in your composer.json to satisfy the PhpSpreadsheet dependency. You can install both at the same time as:
 
 ```bash
 composer require psr/simple-cache:^2.0 pxlrbt/filament-excel
@@ -101,7 +116,7 @@ ExportAction::make()->exports([
 
 ### Closure customization
 
-Many of the functions for customising the export class, accept a Closure that gets passed dynamcic data:
+Many of the functions for customising the export class, accept a Closure that gets passed dynamic data:
 
 ```php
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
@@ -195,6 +210,7 @@ When using `->fromForm()`/`->fromTable()`/`->fromModel()` the headings are resol
 ```php
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use pxlrbt\FilamentExcel\Columns\Column;
 
 ExportAction::make()->exports([
     ExcelExport::make()->withColumns([
@@ -214,6 +230,7 @@ Every column can be formatted by providing a Closure. Additional to the default 
 ```php
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use pxlrbt\FilamentExcel\Columns\Column;
 
 ExportAction::make()->exports([
     ExcelExport::make()->withColumns([
@@ -231,6 +248,7 @@ Columns are auto-scaled to fit the content. If you want to overwrite this with a
 ```php
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use pxlrbt\FilamentExcel\Columns\Column;
 
 ExportAction::make()->exports([
     ExcelExport::make()->withColumns([
@@ -244,13 +262,58 @@ The underlying package PhpSpreadsheet provides various options for Excel column 
 ```php
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat
+use pxlrbt\FilamentExcel\Columns\Column;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 ExportAction::make()->exports([
     ExcelExport::make()->withColumns([
         Column::make('currecy')->format(NumberFormat::FORMAT_CURRENCY_EUR_SIMPLE)
     ]),
 ])
+```
+
+#### Ignore Formatting
+
+When using `->fromForm()`/`->fromTable()` the formatting is resolved from your table or form definition. If you don't want to overwrite every columns `->formatStateUsing()` method, you can ignore the formatting altogher or for specific columns by using `->ignoreFormatting()`:
+
+```php
+use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
+use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use pxlrbt\FilamentExcel\Columns\Column;
+
+ExportAction::make()->exports([
+    // Ignore all formatting
+    ExcelExport::make()->fromTable()->ignoreFormatting()
+    
+    // Ignore specific columns
+    ExcelExport::make()->fromTable()->ignoreFormatting([
+        'created_at', 'updated_at',
+    ]),
+    
+    // Ignore columns based on Closure
+    ExcelExport::make()->fromTable()->ignoreFormatting(
+        fn (Column $column) => Str::startsWith($column->getName(), 'customer_')
+    ),
+])
+```
+
+#### Formatters
+
+When the state of column is not a string, it is run through a formatter even if you use `->ignoreFormatting()` to make sure it's in the right format for Excel.
+
+Currently there are 3 formatters: `ArrayFormatter`, `EnumFormatter` and `ObjectFormatter`. You can swap out any implementation via Laravel's service container, for example to use a different delimiter for the `ArrayFormatter`:
+
+```php
+use pxlrbt\FilamentExcel\Exports\Formatters\ArrayFormatter;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register()
+    {
+        App::bind(ArrayFormatter::class, function () {
+            return new ArrayFormatter(';');
+        });
+    }
 ```
 
 

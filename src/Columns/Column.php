@@ -15,11 +15,11 @@ class Column
 
     public string $name;
 
-    public Closure | string | null $heading = null;
+    public Closure|string|null $heading = null;
 
-    public Closure | int | null $width = null;
+    public Closure|int|null $width = null;
 
-    public Closure | string | null $format = null;
+    public Closure|string|null $format = null;
 
     public ?TableColumn $tableColumn = null;
 
@@ -51,7 +51,7 @@ class Column
         return $this->name;
     }
 
-    public function heading(Closure | string $heading): static
+    public function heading(Closure|string $heading): static
     {
         $this->heading = $heading;
 
@@ -63,7 +63,7 @@ class Column
         return $this->heading ?? Str::headline($this->name);
     }
 
-    public function width(Closure | int $width): static
+    public function width(Closure|int $width): static
     {
         $this->width = $width;
 
@@ -75,7 +75,7 @@ class Column
         return $this->width;
     }
 
-    public function format(Closure | string $format): static
+    public function format(Closure|string $format): static
     {
         $this->format = $format;
 
@@ -84,22 +84,26 @@ class Column
 
     public function tableColumn(TableColumn $tableColumn): static
     {
+        $clone = clone $tableColumn;
+
         // Try to remove all closures
-        foreach ((new ReflectionClass($tableColumn))->getProperties() as $property) {
+        foreach ((new ReflectionClass($clone))->getProperties() as $property) {
             $property->setAccessible(true);
             $type = (string) $property->getType();
 
             if (strpos($type, 'Closure') !== false) {
                 if (strpos($type, 'null') !== false || strpos($type, '?') !== false) {
-                    $property->setValue($tableColumn, null);
+                    $property->setValue($clone, null);
                 }
             }
         }
 
-        // $tableColumn->getStateUsing(null);
-        // $tableColumn->formatStateUsing(null);
+        // Reset other properties
+        $clone->table(null);
+        $clone->getStateUsing(null);
+        invade($clone)->summarizers = [];
 
-        $this->tableColumn = $tableColumn;
+        $this->tableColumn = $clone;
 
         return $this;
     }

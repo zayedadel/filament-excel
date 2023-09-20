@@ -3,7 +3,6 @@
 namespace pxlrbt\FilamentExcel\Exports;
 
 use AnourValar\EloquentSerialize\Facades\EloquentSerializeFacade;
-use Closure;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Concerns\EvaluatesClosures;
@@ -11,11 +10,6 @@ use Filament\Tables\Contracts\HasTable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Livewire\Component;
-
-use function Livewire\invade;
-
-use Maatwebsite\Excel\Concerns\WithEvents;
-use Maatwebsite\Excel\Events\AfterSheet;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -25,6 +19,7 @@ use Maatwebsite\Excel\Concerns\WithCustomChunkSize;
 use Maatwebsite\Excel\Concerns\WithHeadings as HasHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping as HasMapping;
 use pxlrbt\FilamentExcel\Events\ExportFinishedEvent;
+use pxlrbt\FilamentExcel\Exports\Concerns\CanIgnoreFormatting;
 use pxlrbt\FilamentExcel\Exports\Concerns\CanModifyQuery;
 use pxlrbt\FilamentExcel\Exports\Concerns\CanQueue;
 use pxlrbt\FilamentExcel\Exports\Concerns\Except;
@@ -40,30 +35,32 @@ use pxlrbt\FilamentExcel\Exports\Concerns\WithWriterType;
 use pxlrbt\FilamentExcel\Interactions\AskForFilename;
 use pxlrbt\FilamentExcel\Interactions\AskForWriterType;
 
+use function Livewire\invade;
 
-
-class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize, WithColumnWidths, WithColumnFormatting, WithCustomChunkSize,WithEvents
+class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize, WithColumnFormatting, WithColumnWidths, WithCustomChunkSize
 {
-    use Exportable, CanQueue  {
+    use AskForFilename;
+    use AskForWriterType;
+    use CanIgnoreFormatting;
+    use CanModifyQuery;
+    use CanQueue, Exportable  {
         Exportable::download as downloadExport;
         Exportable::queue as queueExport;
         CanQueue::queue insteadof Exportable;
     }
-
-    use EvaluatesClosures;
-    use AskForFilename;
-    use AskForWriterType;
-    use CanModifyQuery;
+    use EvaluatesClosures {
+        EvaluatesClosures::evaluate as parentEvaluate;
+    }
     use Except;
     use Only;
     use WithChunkSize;
+    use WithColumnFormats;
     use WithColumns;
     use WithFilename;
     use WithHeadings;
-    use WithWriterType;
     use WithMapping;
     use WithWidths;
-    use WithColumnFormats;
+    use WithWriterType;
 
     protected string $name;
 
@@ -91,8 +88,6 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
     protected ?string $modelKeyName;
 
     protected array $recordIds = [];
-
-    protected bool $rtl = false;
 
     public function __construct($name)
     {
@@ -190,7 +185,7 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
         if (($resource = $this->getResourceClass()) !== null) {
             $model = $resource::getModel();
         } elseif (($livewire = $this->getLivewire()) instanceof HasTable) {
-            $model = $livewire->getTableModel();
+            $model = $livewire->getTable()->getModel();
         }
 
         return $this->model ??= $model;
@@ -199,8 +194,8 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
     public function hydrate($livewire = null, $records = null, $formData = null): static
     {
         $this->livewire = $livewire;
-        $this->modelKeyName = $this->getModelInstance()->getKeyName();
-        $this->recordIds = $records?->pluck($this->modelKeyName)->toArray() ?? [];
+        $this->modelKeyName = $this->getModelInstance()->getQualifiedKeyName();
+        $this->recordIds = $records?->pluck($this->getModelInstance()->getKeyName())->toArray() ?? [];
 
         $this->formData = $formData;
 
@@ -218,7 +213,7 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
 
         $this->prepareQueuedExport();
 
-        $filename = Str::uuid() . '-' . $this->getFilename();
+        $filename = Str::uuid().'-'.$this->getFilename();
         $userId = auth()->id();
 
         $this
@@ -230,7 +225,7 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
             ->body(__('filament-excel::notifications.queued.body'))
             ->success()
             ->seconds(5)
-            ->icon('heroicon-o-inbox-in')
+            ->icon('heroicon-o-arrow-down-tray')
             ->send();
     }
 
@@ -278,33 +273,14 @@ class ExcelExport implements HasMapping, HasHeadings, FromQuery, ShouldAutoSize,
             );
     }
 
-
-        public function rtl(bool | Closure $condition = true): static
+    public function evaluate(mixed $value, array $parameters = []): mixed
     {
-        $this->rtl = $condition;
-
-        return $this;
-    }
-
-        public function registerEvents(): array
-    {
-
-        if($this->rtl)
-        {
-
-            return [
-                AfterSheet::class    => function(AfterSheet $event) {
-                    $event->sheet->getDelegate()->setRightToLeft(true);
-                },
-            ];
-
-        }
-        return [
-            AfterSheet::class    => function(AfterSheet $event) {
-                $event->sheet->getDelegate()->setRightToLeft(false);
-            },
+        $namedInjections = [
+            ...$parameters,
+            ...$this->getDefaultEvaluationParameters(),
         ];
 
+        return $this->parentEvaluate($value, $namedInjections);
     }
 
     protected function getDefaultEvaluationParameters(): array

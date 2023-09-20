@@ -5,28 +5,27 @@ namespace pxlrbt\FilamentExcel\Exports\Concerns;
 use Closure;
 use Filament\Forms\Components\Field;
 use Filament\Forms\Components\Repeater;
-use Filament\Resources\Form;
+use Filament\Forms\Form;
 use Filament\Resources\Table;
 use Filament\Tables;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Collection;
+use pxlrbt\FilamentExcel\Columns\Column;
 
 use function Livewire\invade;
 
-use pxlrbt\FilamentExcel\Columns\Column;
-
 trait WithColumns
 {
-    public Closure | array $columns = [];
+    public Closure|array $columns = [];
 
-    public Closure | array $generatedColumns = [];
+    public Closure|array $generatedColumns = [];
 
     protected ?Collection $cachedMap = null;
 
     protected ?string $columnsSource = null;
 
-    public function withColumns(Closure | array | string | null $columns = null): static
+    public function withColumns(Closure|array|string $columns = null): static
     {
         if (is_callable($columns)) {
             $this->columns = $columns;
@@ -46,6 +45,10 @@ trait WithColumns
         $columns = $this->evaluate($this->generatedColumns);
 
         foreach ($this->evaluate($this->columns) as $column) {
+            if ($this->columnsSource === 'table' && array_key_exists($column->getName(), $columns)) {
+                $column->tableColumn = $columns[$column->getName()]->tableColumn;
+            }
+
             $columns[$column->getName()] = $column;
         }
 
@@ -93,8 +96,8 @@ trait WithColumns
 
     protected function createFieldMappingFromForm(): Collection
     {
-        $form = $this->getResourceClass()::form(new Form());
-        $components = collect($form->getSchema());
+        $form = $this->getResourceClass()::form(new Form($this->getLivewire()));
+        $components = collect($form->getComponents());
         $extracted = collect();
 
         while (($component = $components->shift()) !== null) {
@@ -131,7 +134,7 @@ trait WithColumns
         $livewire = $this->getLivewire();
 
         if ($livewire instanceof HasTable) {
-            $columns = collect(invade($this->getLivewire())->getTableColumns());
+            $columns = collect($livewire->getTable()->getColumns());
         } else {
             $table = $this->getResourceClass()::table(new Table());
             $columns = collect($table->getColumns());
@@ -139,19 +142,21 @@ trait WithColumns
 
         return $columns
             ->when(
-                $livewire->hasToggleableTableColumns(),
+                $livewire->getTable()->hasToggleableColumns(),
                 fn ($collection) => $collection->reject(
                     fn (Tables\Columns\Column $column) => $livewire->isTableColumnToggledHidden($column->getName())
                 )
             )
             ->mapWithKeys(function (Tables\Columns\Column $column) {
                 $clonedCol = clone $column;
+
+                // Invade for protected properties
                 $invadedColumn = invade($clonedCol);
 
                 $exportColumn = Column::make($column->getName())
                     ->heading($column->getLabel())
                     ->getStateUsing($invadedColumn->getStateUsing)
-                    ->tableColumn($column);
+                    ->tableColumn($clonedCol);
 
                 rescue(fn () => $exportColumn->formatStateUsing($invadedColumn->formatStateUsing), report: false);
 
