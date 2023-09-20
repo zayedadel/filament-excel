@@ -34,6 +34,9 @@ use pxlrbt\FilamentExcel\Exports\Concerns\WithWidths;
 use pxlrbt\FilamentExcel\Exports\Concerns\WithWriterType;
 use pxlrbt\FilamentExcel\Interactions\AskForFilename;
 use pxlrbt\FilamentExcel\Interactions\AskForWriterType;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\AfterSheet;
+use Closure;
 
 use function Livewire\invade;
 
@@ -43,7 +46,7 @@ class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize,
     use AskForWriterType;
     use CanIgnoreFormatting;
     use CanModifyQuery;
-    use CanQueue, Exportable  {
+    use CanQueue, Exportable {
         Exportable::download as downloadExport;
         Exportable::queue as queueExport;
         CanQueue::queue insteadof Exportable;
@@ -61,6 +64,7 @@ class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize,
     use WithMapping;
     use WithWidths;
     use WithWriterType;
+    use WithEvents;
 
     protected string $name;
 
@@ -73,6 +77,8 @@ class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize,
     protected ?Model $livewireOwnerRecord = null;
 
     protected ?Model $modelInstance = null;
+
+    protected bool $rtl = false;
 
     /**
      * @var \Illuminate\Database\Eloquent\Relations\Relation|\Illuminate\Database\Query\Builder|mixed|null
@@ -169,7 +175,7 @@ class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize,
 
         $livewire = $this->getLivewire();
 
-        if ($livewire === null || ! method_exists($livewire, 'getResource')) {
+        if ($livewire === null || !method_exists($livewire, 'getResource')) {
             return null;
         }
 
@@ -202,18 +208,44 @@ class ExcelExport implements FromQuery, HasHeadings, HasMapping, ShouldAutoSize,
         return $this;
     }
 
+
+    public function rtl(bool | Closure $condition = true): static
+    {
+        $this->rtl = $condition;
+
+        return $this;
+    }
+
+    public function registerEvents(): array
+    {
+
+        if ($this->rtl) {
+
+            return [
+                AfterSheet::class    => function (AfterSheet $event) {
+                    $event->sheet->getDelegate()->setRightToLeft(true);
+                },
+            ];
+        }
+        return [
+            AfterSheet::class    => function (AfterSheet $event) {
+                $event->sheet->getDelegate()->setRightToLeft(false);
+            },
+        ];
+    }
+
     public function export()
     {
         $this->resolveFilename();
         $this->resolveWriterType();
 
-        if (! $this->isQueued()) {
+        if (!$this->isQueued()) {
             return $this->downloadExport($this->getFilename(), $this->getWriterType());
         }
 
         $this->prepareQueuedExport();
 
-        $filename = Str::uuid().'-'.$this->getFilename();
+        $filename = Str::uuid() . '-' . $this->getFilename();
         $userId = auth()->id();
 
         $this
